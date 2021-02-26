@@ -3,7 +3,7 @@ import { Readable } from 'stream';
 import { Message } from '../messages/messages.model';
 import { TextChannel, VoiceChannel, StreamDispatcher } from 'discord.js';
 
-const TIMEOUT_INTERVAL = 10000;
+const TIMEOUT_INTERVAL = 30000;
 const DEFAULT_VOLUME = 0.2;
 @Injectable()
 export class AudioService implements BeforeApplicationShutdown {
@@ -20,10 +20,11 @@ export class AudioService implements BeforeApplicationShutdown {
   private _volumes = new Map<string, number>();
   async playAudio(
     message: Message,
-    stream: Readable | string,
+    stream: Readable,
     volume?: number,
     seek?: number,
     bitrate?: number,
+    callback?: (err?: Error) => void,
   ): Promise<any> {
     switch (message.channel) {
       case 'discord':
@@ -40,7 +41,7 @@ export class AudioService implements BeforeApplicationShutdown {
         const vc = (await guild.members.fetch(message.senderId)).voice
           .channelID;
         const channel = guild.channels.cache.find(
-          c => c.id === vc,
+          (c) => c.id === vc,
         ) as VoiceChannel;
         const conn = await channel.join();
         this._channels.set(`discord: ${guild.id}`, channel);
@@ -51,13 +52,25 @@ export class AudioService implements BeforeApplicationShutdown {
           seek,
           bitrate,
         });
-        player.on('finish', () => {
+        stream.on('end', () => {
           this._audioConnections.delete(`discord: ${guild.id}`);
           this._channels.delete(`discord: ${guild.id}`);
           this._leaveTimer.set(
             `discord: ${guild.id}`,
             setTimeout(() => channel.leave(), TIMEOUT_INTERVAL),
           );
+          callback && callback();
+        });
+        stream.on('skip', () => {
+          console.log('skipping ?');
+          this._audioConnections.delete(`discord: ${guild.id}`);
+          this._channels.delete(`discord: ${guild.id}`);
+          this._leaveTimer.set(
+            `discord: ${guild.id}`,
+            setTimeout(() => channel.leave(), TIMEOUT_INTERVAL),
+          );
+
+          callback && callback();
         });
         this._audioConnections.set(`discord: ${guild.id}`, player);
         return player;
