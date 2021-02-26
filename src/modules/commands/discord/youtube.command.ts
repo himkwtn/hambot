@@ -5,14 +5,19 @@ import { DiscordService } from 'src/modules/discord/discord.service';
 import ytdl from 'ytdl-core';
 import ytsr from 'ytsr';
 import { AudioService } from 'src/modules/audio/audio.service';
+import { YouTubeQueue } from './yt-queue';
 
 @Injectable()
 export class YoutubeCommand extends BaseCommand {
-  public command = /^(?:youtube|yt)(?: (volume|play|stop)(?: (.*)?)?)?/i;
+  public command = /^(?:youtube|yt)(?: (volume|play|stop|skip)(?: (.*)?)?)?/i;
   public requiresAuth = false;
   public platforms = ['discord'];
 
-  constructor(private discord: DiscordService, private audio: AudioService) {
+  constructor(
+    private discord: DiscordService,
+    private audio: AudioService,
+    private youtubeQueue: YouTubeQueue,
+  ) {
     super();
   }
   async handle(
@@ -42,18 +47,20 @@ export class YoutubeCommand extends BaseCommand {
           };
         }
         try {
-          await this.audio.playAudio(
+          const queue = this.youtubeQueue.play(
             message,
-            ytdl(vidUrl),
+            vidUrl,
             isNaN(Number(volume)) || Number(volume) > 1
               ? undefined
               : Number(volume),
+            meta,
           );
           return {
             files: [],
-            message: `Playing \`${meta.videoDetails.title}\``,
+            message: queue,
           };
         } catch (e) {
+          console.log(e);
           if (e.message === 'PLAYING') {
             return {
               files: [],
@@ -65,6 +72,13 @@ export class YoutubeCommand extends BaseCommand {
             message: `Something went wrong`,
           };
         }
+      case 'skip':
+        console.log('skipping');
+        const song = this.youtubeQueue.skip(message);
+        return {
+          files: [],
+          message: `Skipping ${song}`,
+        };
       case 'stop':
         await this.audio.stopPlaying(message);
         return {
